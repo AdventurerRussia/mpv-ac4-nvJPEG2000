@@ -1,4 +1,4 @@
-# mpv AC-4 Edition (Windows x64)
+# mpv AC-4 & nvJPEG2000 (Windows x64)
 
 [![Release](https://img.shields.io/github/v/release/AdventurerRussia/mpv-ac4?include_prereleases&color=blue&style=flat-square)](https://github.com/AdventurerRussia/mpv-ac4/releases/latest)
 [![mpv version](https://img.shields.io/badge/mpv-v0.42.0--dev%20(bb4823e)-orange?style=flat-square)](https://github.com/mpv-player/mpv)
@@ -9,6 +9,13 @@
 [![License](https://img.shields.io/badge/license-GPLv3-green?style=flat-square)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 A custom Windows x64 build of **[mpv](https://github.com/mpv-player/mpv)** media player (version **v0.42.0-dev**, git commit [`bb4823e`](https://github.com/mpv-player/mpv/commit/bb4823e5f0eb92a830242e60dfdcc50d1f2e0410)) featuring native decoding of **Dolby AC-4** audio streams ([ETSI TS 103 190-1](https://www.etsi.org/deliver/etsi_ts/103100_103199/10319001/01.03.01_60/ts_10319001v010301p.pdf)) and GPU hardware-accelerated **JPEG 2000** video decoding via NVIDIA **nvJPEG2000** (DCP cinema `AV_PIX_FMT_XYZ12LE` and general RGB/Greyscale).
+
+---
+> **Experimental project**
+>
+> This is an experimental, AI-assisted project created primarily for learning and exploration. Both the implementation and the test cases were developed with the help of AI, based on NVIDIA's official documentation. The tests have not been independently validated or extensively reviewed, so correct behavior cannot be guaranteed in all scenarios.
+>
+> The project is provided as-is, without guarantees of reliability, completeness, or compatibility. It is not intended to be a production-ready alternative to the original mpv or FFmpeg.
 
 ---
 
