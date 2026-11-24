@@ -338,26 +338,93 @@ static int cinema_rsiz(int rsiz)
            p == AV_PROFILE_JPEG2000_DCINEMA_4K;
 }
 
-static enum NVColor classify_color(AVCodecContext *avctx, NVJPEG2KContext *ctx,
-                                   nvjpeg2kStream_t stream, int have_meta,
+static enum NVColor classify_color(AVCodecContext *avctx, nvjpeg2kColorSpace_t jp2_cs,
                                    uint32_t ncomp, int prec, int rsiz, int mct)
 {
     if (ncomp == 3 && prec == 12 && cinema_rsiz(rsiz))
         return NVCOL_XYZ;
-    if (have_meta && ctx->fn.StreamGetColorSpace) {
-        nvjpeg2kColorSpace_t cs = NVJPEG2K_COLORSPACE_UNKNOWN;
-        if (ctx->fn.StreamGetColorSpace(stream, &cs) == NVJPEG2K_STATUS_SUCCESS) {
-            if (cs == NVJPEG2K_COLORSPACE_SRGB)
-                return NVCOL_RGB;
-            if (cs == NVJPEG2K_COLORSPACE_SYCC)
-                return NVCOL_YUV;
-        }
-    }
+    if (jp2_cs == NVJPEG2K_COLORSPACE_SRGB)
+        return NVCOL_RGB;
+    if (jp2_cs == NVJPEG2K_COLORSPACE_SYCC)
+        return NVCOL_YUV;
     if (mct > 0)
         return NVCOL_RGB;
     if (container_is_yuv(avctx))
         return NVCOL_YUV;
     return NVCOL_RGB;
+}
+
+static void set_color_metadata(AVCodecContext *avctx, AVFrame *frame,
+                               const AVPixFmtDescriptor *desc,
+                               enum NVColor col, nvjpeg2kColorSpace_t jp2_cs,
+                               uint32_t ncomp)
+{
+    /* 1. Digital Cinema XYZ: strictly SMPTE 428-1, ignore any conflicting avctx values */
+    if (col == NVCOL_XYZ || frame->format == AV_PIX_FMT_XYZ12LE) {
+        frame->color_primaries = AVCOL_PRI_SMPTE428;
+        frame->color_trc       = AVCOL_TRC_SMPTE428;
+        frame->colorspace      = AVCOL_SPC_RGB;
+        frame->color_range     = AVCOL_RANGE_JPEG;
+        frame->chroma_location = AVCHROMA_LOC_UNSPECIFIED;
+        return;
+    }
+
+    /* 2. Monochrome / Gray */
+    if (ncomp == 1) {
+        frame->colorspace      = AVCOL_SPC_UNSPECIFIED;
+        frame->color_range     = (avctx->color_range != AVCOL_RANGE_UNSPECIFIED) ?
+                                 avctx->color_range : AVCOL_RANGE_JPEG;
+        frame->color_primaries = avctx->color_primaries;
+        frame->color_trc       = (jp2_cs == NVJPEG2K_COLORSPACE_GRAY && avctx->color_trc == AVCOL_TRC_UNSPECIFIED) ?
+                                 AVCOL_TRC_IEC61966_2_1 : avctx->color_trc;
+        frame->chroma_location = AVCHROMA_LOC_UNSPECIFIED;
+        return;
+    }
+
+    /* 3. RGB family */
+    if (desc->flags & AV_PIX_FMT_FLAG_RGB) {
+        frame->chroma_location = AVCHROMA_LOC_UNSPECIFIED;
+        if (jp2_cs == NVJPEG2K_COLORSPACE_SRGB) {
+            frame->colorspace      = AVCOL_SPC_RGB;
+            frame->color_range     = (avctx->color_range != AVCOL_RANGE_UNSPECIFIED) ?
+                                     avctx->color_range : AVCOL_RANGE_JPEG;
+            frame->color_primaries = (avctx->color_primaries != AVCOL_PRI_UNSPECIFIED) ?
+                                     avctx->color_primaries : AVCOL_PRI_BT709;
+            frame->color_trc       = (avctx->color_trc != AVCOL_TRC_UNSPECIFIED) ?
+                                     avctx->color_trc : AVCOL_TRC_IEC61966_2_1;
+        } else {
+            /* Unknown / raw J2K / not supported:
+             * Do not invent display colorimetry. For colorspace, never apply a YUV matrix to RGB format. */
+            frame->colorspace      = (avctx->colorspace == AVCOL_SPC_RGB) ?
+                                     AVCOL_SPC_RGB : AVCOL_SPC_UNSPECIFIED;
+            frame->color_range     = avctx->color_range;
+            frame->color_primaries = avctx->color_primaries;
+            frame->color_trc       = avctx->color_trc;
+        }
+        return;
+    }
+
+    /* 4. YUV / other formats */
+    if (jp2_cs == NVJPEG2K_COLORSPACE_SYCC) {
+        /* Per ITU-T T.800 Annex I.7.3.2: sYCC uses BT.601 matrix (SMPTE 170M), full range, BT.709 primaries, sRGB transfer */
+        frame->colorspace      = (avctx->colorspace != AVCOL_SPC_UNSPECIFIED) ?
+                                 avctx->colorspace : AVCOL_SPC_SMPTE170M;
+        frame->color_range     = (avctx->color_range != AVCOL_RANGE_UNSPECIFIED) ?
+                                 avctx->color_range : AVCOL_RANGE_JPEG;
+        frame->color_primaries = (avctx->color_primaries != AVCOL_PRI_UNSPECIFIED) ?
+                                 avctx->color_primaries : AVCOL_PRI_BT709;
+        frame->color_trc       = (avctx->color_trc != AVCOL_TRC_UNSPECIFIED) ?
+                                 avctx->color_trc : AVCOL_TRC_IEC61966_2_1;
+        /* T.800 does not specify chroma sample location; never force LEFT */
+        frame->chroma_location = avctx->chroma_sample_location;
+    } else {
+        /* Unknown / raw J2K / not supported: inherit from avctx without guessing or forcing defaults */
+        frame->colorspace      = avctx->colorspace;
+        frame->color_range     = avctx->color_range;
+        frame->color_primaries = avctx->color_primaries;
+        frame->color_trc       = avctx->color_trc;
+        frame->chroma_location = avctx->chroma_sample_location;
+    }
 }
 
 static enum AVPixelFormat pick_depth(int prec,
@@ -796,7 +863,8 @@ static int pack_plane(const AVPixFmtDescriptor *desc, AVFrame *frame,
 
 static int pack_frame(AVCodecContext *avctx, NVJPEG2KContext *ctx, AVFrame *frame,
                       enum AVPixelFormat pix_fmt, const int *plane_map, uint32_t ncomp,
-                      const nvjpeg2kImageComponentInfo_t comp[], int bpp)
+                      const nvjpeg2kImageComponentInfo_t comp[], int bpp,
+                      enum NVColor col, nvjpeg2kColorSpace_t jp2_cs)
 {
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(pix_fmt);
     int ret;
@@ -820,10 +888,7 @@ static int pack_frame(AVCodecContext *avctx, NVJPEG2KContext *ctx, AVFrame *fram
                 d[3 * x + 2] = (uint16_t)((rz[x] & 0x0FFF) << 4);
             }
         }
-        frame->color_primaries = AVCOL_PRI_SMPTE428;
-        frame->color_trc       = AVCOL_TRC_SMPTE428;
-        frame->colorspace      = AVCOL_SPC_RGB;
-        frame->color_range     = AVCOL_RANGE_JPEG;
+        set_color_metadata(avctx, frame, desc, col, jp2_cs, ncomp);
         return 0;
     }
 
@@ -835,20 +900,7 @@ static int pack_frame(AVCodecContext *avctx, NVJPEG2KContext *ctx, AVFrame *fram
         if (ret < 0)
             return ret;
     }
-    frame->color_primaries = avctx->color_primaries;
-    frame->color_trc = avctx->color_trc;
-    if (desc->flags & AV_PIX_FMT_FLAG_RGB) {
-        frame->colorspace = AVCOL_SPC_RGB;
-        frame->color_range = AVCOL_RANGE_JPEG;
-    } else {
-        frame->colorspace = avctx->colorspace;
-        frame->color_range = avctx->color_range == AVCOL_RANGE_UNSPECIFIED ?
-                             AVCOL_RANGE_MPEG : avctx->color_range;
-        if (desc->log2_chroma_w || desc->log2_chroma_h) {
-            frame->chroma_location = avctx->chroma_sample_location == AVCHROMA_LOC_UNSPECIFIED ?
-                                     AVCHROMA_LOC_LEFT : avctx->chroma_sample_location;
-        }
-    }
+    set_color_metadata(avctx, frame, desc, col, jp2_cs, ncomp);
     return 0;
 }
 
@@ -1071,8 +1123,15 @@ static int nvjpeg2k_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         }
     }
 
+    nvjpeg2kColorSpace_t jp2_cs = NVJPEG2K_COLORSPACE_UNKNOWN;
+    if (have_meta && ctx->fn.StreamGetColorSpace) {
+        st = ctx->fn.StreamGetColorSpace(ctx->jpeg_stream, &jp2_cs);
+        if (st != NVJPEG2K_STATUS_SUCCESS)
+            jp2_cs = NVJPEG2K_COLORSPACE_UNKNOWN;
+    }
+
     prec = comp_info[0].precision;
-    col = classify_color(avctx, ctx, ctx->jpeg_stream, have_meta, ncomp, prec, rsiz, mct);
+    col = classify_color(avctx, jp2_cs, ncomp, prec, rsiz, mct);
     pix_fmt = select_pixel_format(ncomp, comp_info, col, plane_map);
     if (pix_fmt == AV_PIX_FMT_NONE) {
         av_log(avctx, AV_LOG_INFO, "nvjpeg2k: pixel format is not supported on the GPU\n");
@@ -1136,7 +1195,7 @@ static int nvjpeg2k_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     ret = ff_get_buffer(avctx, frame, 0);
     if (ret < 0)
         goto done;
-    ret = pack_frame(avctx, ctx, frame, pix_fmt, plane_map, ncomp, comp_info, bpp);
+    ret = pack_frame(avctx, ctx, frame, pix_fmt, plane_map, ncomp, comp_info, bpp, col, jp2_cs);
     if (ret == AVERROR_PATCHWELCOME) {
         av_frame_unref(frame);
         fallback = 1;
