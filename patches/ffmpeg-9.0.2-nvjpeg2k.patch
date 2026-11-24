@@ -5122,7 +5122,7 @@
 +#endif /* AVCODEC_NVJPEG2K_LOADER_H */
 --- a/libavcodec/nvjpeg2kdec.c
 +++ b/libavcodec/nvjpeg2kdec.c
-@@ -0,0 +1,1372 @@
+@@ -0,0 +1,1489 @@
 +/*
 + * JPEG 2000 decoder using NVIDIA nvJPEG2000 GPU library (dynamic loading)
 + *
@@ -5182,6 +5182,20 @@
 +    NVCOL_XYZ,
 +};
 +
++typedef struct NVJPEG2KStreamSignature {
++    uint32_t width;
++    uint32_t height;
++    uint32_t ncomp;
++    uint16_t rsiz;
++    uint8_t  precision;
++    uint8_t  sgn;
++    uint8_t  sub_x;
++    uint8_t  sub_y;
++    uint8_t  bad_off;
++    uint8_t  has_nlt3;
++    uint8_t  valid;
++} NVJPEG2KStreamSignature;
++
 +typedef struct NVJPEG2KContext {
 +    AVClass              *av_class;
 +    int                   gpu_device;
@@ -5204,6 +5218,8 @@
 +    void                 *host_buf[MAX_COMPONENTS];
 +    size_t                host_buf_size[MAX_COMPONENTS];
 +
++    NVJPEG2KStreamSignature unsupported_sig;
++    int                   has_unsupported_sig;
 +    AVCodecContext       *sw;
 +    int                   force_sw;
 +} NVJPEG2KContext;
@@ -5228,12 +5244,32 @@
 +        ctx->fn.field = (__typeof__(ctx->fn.field))_p;                        \
 +    } while (0)
 +
-+static int status_unsupported(nvjpeg2kStatus_t st)
++static int sig_matches(const NVJPEG2KStreamSignature *a, const NVJPEG2KStreamSignature *b)
 +{
-+    return st == NVJPEG2K_STATUS_BAD_JPEG ||
-+           st == NVJPEG2K_STATUS_JPEG_NOT_SUPPORTED ||
++    if (!a->valid || !b->valid)
++        return 0;
++    return a->width == b->width &&
++           a->height == b->height &&
++           a->ncomp == b->ncomp &&
++           a->rsiz == b->rsiz &&
++           a->precision == b->precision &&
++           a->sgn == b->sgn &&
++           a->sub_x == b->sub_x &&
++           a->sub_y == b->sub_y &&
++           a->bad_off == b->bad_off &&
++           a->has_nlt3 == b->has_nlt3;
++}
++
++static inline int status_is_unsupported(nvjpeg2kStatus_t st)
++{
++    return st == NVJPEG2K_STATUS_JPEG_NOT_SUPPORTED ||
 +           st == NVJPEG2K_STATUS_ARCH_MISMATCH ||
 +           st == NVJPEG2K_STATUS_IMPLEMENTATION_NOT_SUPPORTED;
++}
++
++static inline int status_is_corrupt(nvjpeg2kStatus_t st)
++{
++    return st == NVJPEG2K_STATUS_BAD_JPEG;
 +}
 +
 +static int cuda_enter(AVCodecContext *avctx, NVJPEG2KContext *ctx, CUcontext *saved)
@@ -5389,7 +5425,8 @@
 +    return data;
 +}
 +
-+static void parse_hints(const uint8_t *data, int size, int *rsiz, int *mct, int *bad_off, int *has_nlt3)
++static void parse_hints(const uint8_t *data, int size, int *rsiz, int *mct, int *bad_off, int *has_nlt3,
++                        NVJPEG2KStreamSignature *sig)
 +{
 +    const uint8_t *cs;
 +    int cs_size, i;
@@ -5397,6 +5434,8 @@
 +    *mct = -1;
 +    *bad_off = 0;
 +    *has_nlt3 = 0;
++    if (sig)
++        memset(sig, 0, sizeof(*sig));
 +    cs = find_codestream(data, size, &cs_size);
 +    if (cs_size < 2 || cs[0] != 0xFF || cs[1] != 0x4F)
 +        return;
@@ -5426,6 +5465,21 @@
 +            *rsiz = (cs[i + 2] << 8) | cs[i + 3];
 +            if (x0 || y0 || xt0 || yt0)
 +                *bad_off = 1;
++            if (sig) {
++                sig->valid = 1;
++                sig->rsiz = (uint16_t)*rsiz;
++                sig->width = rb32(cs + i + 4);
++                sig->height = rb32(cs + i + 8);
++                sig->ncomp = (cs[i + 36] << 8) | cs[i + 37];
++                if (sig->ncomp > 0 && len >= 38 + 3) {
++                    uint8_t ssiz = cs[i + 38];
++                    sig->precision = (ssiz & 0x7F) + 1;
++                    sig->sgn = (ssiz >> 7) & 1;
++                    sig->sub_x = cs[i + 39];
++                    sig->sub_y = cs[i + 40];
++                }
++                sig->bad_off = (uint8_t)*bad_off;
++            }
 +        } else if (marker == 0x52 && len >= 7) {
 +            *mct = cs[i + 6];
 +        } else if (marker == 0x54 && len >= 4) {
@@ -5433,6 +5487,8 @@
 +            /* If Cnlt is 1 byte, Tnlt is at cs[i+3]; if 2 bytes, at cs[i+4] */
 +            if (cs[i + 2] == 3 || (len >= 5 && cs[i + 3] == 3) || (len >= 6 && cs[i + 4] == 3))
 +                *has_nlt3 = 1;
++            if (sig)
++                sig->has_nlt3 = (uint8_t)*has_nlt3;
 +        }
 +        i += len;
 +    }
@@ -6151,18 +6207,32 @@
 +    void *pixel_data[MAX_COMPONENTS];
 +    size_t pitch_arr[MAX_COMPONENTS];
 +    int plane_map[MAX_COMPONENTS] = { 0, 1, 2, 3 };
-+    int ret = 0, switched = -1, fallback = 0, have_meta = 0;
++    int ret = 0, switched = -1, fallback = 0, sticky = 0, have_meta = 0;
 +    CUcontext saved = NULL;
 +    int rsiz = -1, mct = -1, bad_off = 0, has_nlt3 = 0, bpp, prec;
 +    uint32_t ncomp;
 +    enum AVPixelFormat pix_fmt;
 +    enum NVColor col;
 +    CUresult cr;
++    NVJPEG2KStreamSignature sig;
 +
 +    *got_frame = 0;
 +    if (!avpkt->size)
 +        return 0;
-+    if (ctx->force_sw) {
++
++    parse_hints(avpkt->data, avpkt->size, &rsiz, &mct, &bad_off, &has_nlt3, &sig);
++
++    if (ctx->has_unsupported_sig && sig.valid) {
++        if (sig_matches(&ctx->unsupported_sig, &sig)) {
++            ret = sw_fallback(avctx, ctx, frame, avpkt);
++            if (ret >= 0)
++                *got_frame = 1;
++            return ret;
++        }
++        /* Signature changed: reset sticky state and try GPU decode on the new stream */
++        ctx->has_unsupported_sig = 0;
++        ctx->force_sw = 0;
++    } else if (ctx->force_sw && !sig.valid) {
 +        ret = sw_fallback(avctx, ctx, frame, avpkt);
 +        if (ret >= 0)
 +            *got_frame = 1;
@@ -6172,17 +6242,18 @@
 +    if ((switched = cuda_enter(avctx, ctx, &saved)) < 0)
 +        return switched;
 +
-+    parse_hints(avpkt->data, avpkt->size, &rsiz, &mct, &bad_off, &has_nlt3);
 +    if (bad_off) {
 +        av_log(avctx, AV_LOG_INFO,
 +               "nvjpeg2k: non-zero image/tile offset is not supported on the GPU\n");
 +        fallback = 1;
++        sticky = 1;
 +        goto done;
 +    }
 +    if (has_nlt3) {
 +        av_log(avctx, AV_LOG_INFO,
 +               "nvjpeg2k: NLT type 3 marker present in codestream, using software fallback\n");
 +        fallback = 1;
++        sticky = 1;
 +        goto done;
 +    }
 +
@@ -6196,25 +6267,41 @@
 +    }
 +    if (st != NVJPEG2K_STATUS_SUCCESS) {
 +        av_log(avctx, AV_LOG_WARNING, "nvjpeg2k: StreamParse failed (%d)\n", (int)st);
-+        if (status_unsupported(st))
++        if (status_is_unsupported(st)) {
 +            fallback = 1;
-+        else
++            sticky = 1;
++        } else if (status_is_corrupt(st)) {
++            fallback = 1;
++            sticky = 0;
++        } else {
 +            ret = AVERROR_EXTERNAL;
++        }
 +        goto done;
 +    }
 +
 +    st = ctx->fn.StreamGetImageInfo(ctx->jpeg_stream, &img_info);
 +    if (st != NVJPEG2K_STATUS_SUCCESS) {
-+        ret = status_unsupported(st) ? 0 : AVERROR_INVALIDDATA;
-+        if (!ret)
++        if (status_is_unsupported(st)) {
 +            fallback = 1;
-+        else
++            sticky = 1;
++        } else if (status_is_corrupt(st)) {
++            fallback = 1;
++            sticky = 0;
++        } else {
 +            av_log(avctx, AV_LOG_ERROR, "nvjpeg2k: StreamGetImageInfo failed (%d)\n", (int)st);
++            ret = AVERROR_INVALIDDATA;
++        }
 +        goto done;
 +    }
++    sig.width = img_info.image_width;
++    sig.height = img_info.image_height;
++    sig.ncomp = img_info.num_components;
++    sig.valid = 1;
++
 +    ncomp = img_info.num_components;
 +    if (ncomp > MAX_COMPONENTS) {
 +        fallback = 1;
++        sticky = 1;
 +        goto done;
 +    }
 +    for (uint32_t c = 0; c < ncomp; c++) {
@@ -6227,6 +6314,7 @@
 +    ret = check_components(avctx, &img_info, comp_info, ncomp);
 +    if (ret == AVERROR_PATCHWELCOME) {
 +        fallback = 1;
++        sticky = 1;
 +        ret = 0;
 +        goto done;
 +    }
@@ -6243,6 +6331,8 @@
 +                       "nvjpeg2k: component %u uses NLT type 3 (floating-point), "
 +                       "using software fallback\n", c);
 +                fallback = 1;
++                sticky = 1;
++                sig.has_nlt3 = 1;
 +                goto done;
 +            }
 +        }
@@ -6256,11 +6346,15 @@
 +    }
 +
 +    prec = comp_info[0].precision;
++    sig.precision = (uint8_t)prec;
++    sig.sgn = comp_info[0].sgn;
++
 +    col = classify_color(avctx, jp2_cs, ncomp, prec, rsiz, mct);
 +    pix_fmt = select_pixel_format(ncomp, comp_info, col, plane_map);
 +    if (pix_fmt == AV_PIX_FMT_NONE) {
 +        av_log(avctx, AV_LOG_INFO, "nvjpeg2k: pixel format is not supported on the GPU\n");
 +        fallback = 1;
++        sticky = 1;
 +        goto done;
 +    }
 +    if (cinema_rsiz(rsiz))
@@ -6289,10 +6383,15 @@
 +                        &decoded_img, NULL);
 +    if (st != NVJPEG2K_STATUS_SUCCESS) {
 +        av_log(avctx, AV_LOG_WARNING, "nvjpeg2k: Decode failed (%d)\n", (int)st);
-+        if (status_unsupported(st))
++        if (status_is_unsupported(st)) {
 +            fallback = 1;
-+        else
++            sticky = 1;
++        } else if (status_is_corrupt(st)) {
++            fallback = 1;
++            sticky = 0;
++        } else {
 +            ret = AVERROR_EXTERNAL;
++        }
 +        goto done;
 +    }
 +
@@ -6324,6 +6423,7 @@
 +    if (ret == AVERROR_PATCHWELCOME) {
 +        av_frame_unref(frame);
 +        fallback = 1;
++        sticky = 1;
 +        ret = 0;
 +        goto done;
 +    }
@@ -6340,7 +6440,11 @@
 +done:
 +    cuda_leave(ctx, saved, switched);
 +    if (fallback) {
-+        ctx->force_sw = 1;
++        if (sticky && sig.valid) {
++            ctx->unsupported_sig = sig;
++            ctx->has_unsupported_sig = 1;
++            ctx->force_sw = 1;
++        }
 +        ret = sw_fallback(avctx, ctx, frame, avpkt);
 +        if (ret >= 0)
 +            *got_frame = 1;
@@ -6348,6 +6452,13 @@
 +            *got_frame = 0;
 +    }
 +    return ret;
++}
++
++static void nvjpeg2k_decode_flush(AVCodecContext *avctx)
++{
++    NVJPEG2KContext *ctx = avctx->priv_data;
++    if (ctx->sw)
++        avcodec_flush_buffers(ctx->sw);
 +}
 +
 +static av_cold int nvjpeg2k_decode_close(AVCodecContext *avctx)
@@ -6446,6 +6557,11 @@
 +    return 0;
 +}
 +
++static void nvjpeg2k_decode_flush(AVCodecContext *avctx)
++{
++    (void)avctx;
++}
++
 +#endif
 +
 +#define OFFSET(x) offsetof(NVJPEG2KContext, x)
@@ -6492,6 +6608,7 @@
 +    .priv_data_size = sizeof(NVJPEG2KContext),
 +    .init           = nvjpeg2k_decode_init,
 +    .close          = nvjpeg2k_decode_close,
++    .flush          = nvjpeg2k_decode_flush,
 +    FF_CODEC_DECODE_CB(nvjpeg2k_decode_frame),
 +    .caps_internal  = FF_CODEC_CAP_NOT_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 +};
