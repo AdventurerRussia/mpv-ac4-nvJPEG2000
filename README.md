@@ -88,6 +88,14 @@ MPV PLAYER AC-4/
 5. **`libavcodec/nvjpeg2kdec.c` & `nvjpeg2k_loader.h`**:
    Optional GPU JPEG 2000 decoder (`-c:v jpeg2000_nvjpeg`, mpv `--vd=jpeg2000_nvjpeg`). It is registered after the software decoder, so FFmpeg and mpv keep using software JPEG 2000 unless the GPU decoder is requested. `nvjpeg2k_0.dll` is loaded by full path from the application directory or from the directory of the FFmpeg module (`LoadLibraryExW` with `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR`); `nvcuda.dll` is loaded from System32. No CUDA toolkit is required at build time. The library version is checked with `nvjpeg2kGetProperty` (0.8 or newer). Device memory uses `cuMemAllocPitch`, host staging uses pinned `cuMemAllocHost`, and the decoded planes are copied with `cuMemcpyDtoHAsync` on the default stream followed by one `cuCtxSynchronize`. The previous CUDA context is saved with `cuCtxGetCurrent` and restored with `cuCtxSetCurrent` (`cuCtxPushCurrent` returns `CUDA_ERROR_INVALID_CONTEXT` on a retained primary context with this driver). 8-bit streams are decoded as `NVJPEG2K_UINT8`. Output samples are scaled to the destination depth; 10- and 12-bit planar formats stay LSB-aligned, while `XYZ12LE` is stored left-shifted by 4, which is what FFmpeg expects. Colour is taken from the codestream: Digital Cinema `Rsiz` selects XYZ, `nvjpeg2kStreamGetColorSpace` selects sRGB or sYCC, an MCT marks RGB, and container colour metadata is used only after that. Unknown subsampling, a signed component, a bit depth outside 1..16, or a non-zero image/tile offset is not decoded on the GPU; that frame is passed to the software `jpeg2000` decoder. The decoder is single-threaded. Option `-gpu` (default 0) selects the CUDA device. `nvjpeg2k_0.dll` is NVIDIA software and is not covered by the LGPL/GPL of FFmpeg and mpv; redistribute it only under NVIDIA's terms.
 
+   **Pixel Format Handling & Dynamic Transitions**:
+   `jpeg2000_nvjpeg` assigns `avctx->pix_fmt` and updates dimensions before calling `ff_get_buffer()`, conforming strictly to the FFmpeg 9.0.2 decoder contract (mirroring native `jpeg2000dec` behavior). All selectable pixel formats are guaranteed to be a subset of the codec's declared `pix_fmts` array in `FFCodec`. The decoder seamlessly supports dynamic mid-stream transitions between frames:
+   - **Bit-depth changes**: 8-bit, 10-bit, 12-bit, and 16-bit depths.
+   - **Color family changes**: RGB (`GBRP`), YUV (`YUV444P`, `YUV422P`, `YUV420P`, etc.), Grayscale (`GRAY`), and DCI Digital Cinema (`XYZ12LE`).
+   - **Chroma subsampling changes**: 4:2:0, 4:2:2, 4:4:0, and 4:4:4.
+   - **Resolution changes**: arbitrary width and height updates validated through `av_image_check_size2` and `ff_set_dimensions`.
+   Downstream players (mpv `vo`) and filter chains (`vf`) dynamically reconfigure upon receiving the updated frame properties without requiring manual decoder restart.
+
 ---
 
 ## 🔨 Building From Source (Windows UCRT64 / [MSYS2](https://www.msys2.org/))
