@@ -1,12 +1,11 @@
 # mpv — AC-4, NVIDIA nvJPEG2000 & Fraunhofer VVdeC (Windows x64)
 
-[![Build](https://img.shields.io/badge/build-1.7.0-blue?style=for-the-badge)](https://github.com/AdventurerRussia/mpv-ac4-nvJPEG2000-VVdeC/releases)
-[![mpv](https://img.shields.io/badge/mpv-0.42.0--dev-orange?style=for-the-badge)](https://github.com/mpv-player/mpv)
-[![FFmpeg](https://img.shields.io/badge/FFmpeg-9.0.2-red?style=for-the-badge)](https://github.com/FFmpeg/FFmpeg/tree/release/9.0)
-[![VVdeC](https://img.shields.io/badge/VVdeC-3.4.0--dev-blue?style=for-the-badge)](https://github.com/fraunhoferhhi/vvdec)
-[![libplacebo](https://img.shields.io/badge/libplacebo-7.387.0-purple?style=for-the-badge)](https://github.com/haasn/libplacebo)
-[![libass](https://img.shields.io/badge/libass-0.17.4-teal?style=for-the-badge)](https://github.com/libass/libass)
-
+[![Build](https://img.shields.io/badge/build-1.7.0-blue?style=flat-square)](https://github.com/AdventurerRussia/mpv-ac4-nvJPEG2000-VVdeC/releases)
+[![mpv](https://img.shields.io/badge/mpv-0.42.0--dev-orange?style=flat-square)](https://github.com/mpv-player/mpv)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-9.0.2-red?style=flat-square)](https://github.com/FFmpeg/FFmpeg/tree/release/9.0)
+[![VVdeC](https://img.shields.io/badge/VVdeC-3.4.0--dev-blue?style=flat-square)](https://github.com/fraunhoferhhi/vvdec)
+[![libplacebo](https://img.shields.io/badge/libplacebo-7.387.0-purple?style=flat-square)](https://github.com/haasn/libplacebo)
+[![libass](https://img.shields.io/badge/libass-0.17.4-teal?style=flat-square)](https://github.com/libass/libass)
 [![Dolby AC-4](https://img.shields.io/badge/audio-Dolby%20AC--4-success?style=flat-square)](https://www.etsi.org/deliver/etsi_ts/103100_103199/10319001/01.03.01_60/ts_10319001v010301p.pdf)
 [![NVIDIA nvJPEG2000](https://img.shields.io/badge/video-NVIDIA%20nvJPEG2000-76B900?style=flat-square&logo=nvidia&logoColor=white)](https://developer.nvidia.com/nvjpeg2000)
 [![H.266 / VVC](https://img.shields.io/badge/video-H.266%20%2F%20VVC-2962FF?style=flat-square)](https://github.com/fraunhoferhhi/vvdec)
