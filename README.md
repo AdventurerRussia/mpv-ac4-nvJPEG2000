@@ -1,15 +1,25 @@
-# mpv AC-4 & nvJPEG2000 & VVdeC (Windows x64)
+# mpv — AC-4, NVIDIA nvJPEG2000 & Fraunhofer VVdeC (Windows x64)
 
-[![Release](https://img.shields.io/github/v/release/AdventurerRussia/mpv-ac4?include_prereleases&color=blue&style=flat-square)](https://github.com/AdventurerRussia/mpv-ac4/releases/latest)
-[![mpv version](https://img.shields.io/badge/mpv-v0.42.0--dev%20(bb4823e)-orange?style=flat-square)](https://github.com/mpv-player/mpv)
-[![FFmpeg](https://img.shields.io/badge/FFmpeg-9.0.2%20("Lei")-red?style=flat-square)](https://github.com/FFmpeg/FFmpeg/tree/release/9.0)
-[![Platform](https://img.shields.io/badge/platform-Windows%20x64-informational?style=flat-square)](https://github.com/AdventurerRussia/mpv-ac4/releases/latest)
-[![Audio](https://img.shields.io/badge/audio-Dolby%20AC--4%20(ETSI%20TS%20103%20190)-success?style=flat-square)](https://www.etsi.org/deliver/etsi_ts/103100_103199/10319001/01.03.01_60/ts_10319001v010301p.pdf)
-[![Video](https://img.shields.io/badge/video-JPEG%202000%20(NVIDIA%20nvJPEG2000)-76B900?style=flat-square&logo=nvidia&logoColor=white)](https://developer.nvidia.com/nvjpeg2000)
-[![VVC](https://img.shields.io/badge/video-H.266%20%2F%20VVC%20(Fraunhofer%20VVdeC)-blue?style=flat-square)](https://github.com/fraunhoferhhi/vvdec)
-[![License](https://img.shields.io/badge/license-GPLv3-green?style=flat-square)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![Build](https://img.shields.io/badge/build-1.7.0-blue?style=for-the-badge)](https://github.com/AdventurerRussia/mpv-ac4-nvJPEG2000-VVdeC/releases)
+[![mpv](https://img.shields.io/badge/mpv-0.42.0--dev-orange?style=for-the-badge)](https://github.com/mpv-player/mpv)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-9.0.2-red?style=for-the-badge)](https://github.com/FFmpeg/FFmpeg/tree/release/9.0)
+[![VVdeC](https://img.shields.io/badge/VVdeC-3.4.0--dev-blue?style=for-the-badge)](https://github.com/fraunhoferhhi/vvdec)
+[![libplacebo](https://img.shields.io/badge/libplacebo-7.387.0-purple?style=for-the-badge)](https://github.com/haasn/libplacebo)
+[![libass](https://img.shields.io/badge/libass-0.17.4-teal?style=for-the-badge)](https://github.com/libass/libass)
 
-A custom Windows x64 build of **[mpv](https://github.com/mpv-player/mpv)** media player (version **v0.42.0-dev**, git commit [`bb4823e`](https://github.com/mpv-player/mpv/commit/bb4823e5f0eb92a830242e60dfdcc50d1f2e0410)) featuring native decoding of **Dolby AC-4** audio streams ([ETSI TS 103 190-1](https://www.etsi.org/deliver/etsi_ts/103100_103199/10319001/01.03.01_60/ts_10319001v010301p.pdf)), GPU hardware-accelerated **JPEG 2000** video decoding via NVIDIA **nvJPEG2000** (DCP cinema `AV_PIX_FMT_XYZ12LE` and general RGB/Greyscale), and software **H.266 / VVC** decoding via the Fraunhofer **VVdeC** library (`libvvdec`).
+[![Dolby AC-4](https://img.shields.io/badge/audio-Dolby%20AC--4-success?style=flat-square)](https://www.etsi.org/deliver/etsi_ts/103100_103199/10319001/01.03.01_60/ts_10319001v010301p.pdf)
+[![NVIDIA nvJPEG2000](https://img.shields.io/badge/video-NVIDIA%20nvJPEG2000-76B900?style=flat-square&logo=nvidia&logoColor=white)](https://developer.nvidia.com/nvjpeg2000)
+[![H.266 / VVC](https://img.shields.io/badge/video-H.266%20%2F%20VVC-2962FF?style=flat-square)](https://github.com/fraunhoferhhi/vvdec)
+[![Windows x64](https://img.shields.io/badge/platform-Windows%20x64-informational?style=flat-square)](https://github.com/AdventurerRussia/mpv-ac4-nvJPEG2000-VVdeC/releases)
+[![GPLv3](https://img.shields.io/badge/license-GPLv3-green?style=flat-square)](https://www.gnu.org/licenses/gpl-3.0.html)
+
+A custom **Windows x64 build of [mpv](https://github.com/mpv-player/mpv)** that extends the FFmpeg-based playback pipeline with three additional decoding capabilities:
+
+- **Dolby AC-4 audio** — native decoding integrated into a custom FFmpeg build, including stereo and multichannel presentations.
+- **JPEG 2000 video on NVIDIA GPUs** — an optional CUDA-based decoder powered by **NVIDIA nvJPEG2000**, including support for Digital Cinema XYZ 12-bit (`AV_PIX_FMT_XYZ12LE`) and supported RGB, YUV and grayscale formats. The standard FFmpeg software decoder remains available as a fallback.
+- **H.266 / VVC video** — software decoding through **Fraunhofer HHI VVdeC** (`libvvdec`). A small mpv codec-priority patch makes VVdeC the preferred software decoder when hardware VVC decoding is unavailable; FFmpeg's native `vvc` decoder remains selectable.
+
+The build combines **mpv v0.42.0-dev** (commit [`bb4823e`](https://github.com/mpv-player/mpv/commit/bb4823e5f0eb92a830242e60dfdcc50d1f2e0410)) with a patched **FFmpeg 9.0.2** and the component versions listed above. It is distributed as a portable package, with the required runtime libraries included.
 
 ---
 > **Experimental project**
@@ -22,59 +32,62 @@ A custom Windows x64 build of **[mpv](https://github.com/mpv-player/mpv)** media
 
 ## ⚡ About The Project
 
-In upstream [FFmpeg](https://github.com/FFmpeg/FFmpeg) and standard mpv distributions (including popular builds by [shinchiro](https://github.com/shinchiro/mpv-winbuild-cmake) and [zhongfly](https://github.com/zhongfly/mpv-winbuild)), an AC-4 audio decoder is not present — upstream code only includes an elementary stream demuxer. When attempting to play a video with an AC-4 audio stream, players fail to decode any sound.
+This project focuses on extending mpv's playback support for formats and decoding paths that are not available in a typical Windows mpv/FFmpeg build.
 
-In this project, the native AC-4 decoder developed by **[Paul B Mahol (richardpl)](https://github.com/richardpl)** as part of the **[librempeg](https://github.com/librempeg/librempeg)** fork has been ported and adapted for the latest stable **[FFmpeg 9.0.2 ("Lei")](https://github.com/FFmpeg/FFmpeg/tree/release/9.0)** (a patch for **[FFmpeg 7.1](https://github.com/FFmpeg/FFmpeg/tree/release/7.1)** is also provided), preserving the `libswresample` resampling library required by mpv. The mpv player is built against this custom FFmpeg 9.0.2 (`libavcodec 63`) and decodes AC-4 audio directly out of the box without requiring external filters.
+### Dolby AC-4 in FFmpeg
 
-### 📌 Core Component Versions:
-* **mpv**: `v0.42.0-dev` (commit [`bb4823e`](https://github.com/mpv-player/mpv/commit/bb4823e5f0eb92a830242e60dfdcc50d1f2e0410))
-* **FFmpeg**: `n9.0.2 ("Lei")` (`libavcodec 63.1.102`, `libavformat 63.1.102`, `libavutil 61.1.102`, `libswresample 7.1.102`)
-* **VVdeC**: `3.4.0-dev` (Fraunhofer HHI — [github.com/fraunhoferhhi/vvdec](https://github.com/fraunhoferhhi/vvdec))
-* **libplacebo**: `v7.387.0`
-* **libass**: `0.17.4`
+The upstream FFmpeg codebase provides AC-4 stream demuxing, but does not include the AC-4 audio decoder used by this build. The decoder, originally developed by **[Paul B Mahol (richardpl)](https://github.com/richardpl)** in the **[librempeg](https://github.com/librempeg/librempeg)** project, has been ported and adapted to **FFmpeg 9.0.2**. The integration preserves the `libswresample` functionality required by mpv and allows AC-4 tracks to be decoded directly, without external audio filters.
+
+The repository also includes a patch for **FFmpeg 7.1**. The current Windows package is built with FFmpeg 9.0.2.
+
+### NVIDIA nvJPEG2000
+
+The optional `jpeg2000_nvjpeg` decoder uses NVIDIA's **nvJPEG2000** library and CUDA driver API to decode supported JPEG 2000 streams on the GPU. It can be selected in mpv with `--vd=jpeg2000_nvjpeg`. The regular FFmpeg `jpeg2000` software decoder remains available and is used when the GPU decoder is not selected or cannot handle a particular stream.
+
+### Fraunhofer VVdeC for H.266 / VVC
+
+**[VVdeC](https://github.com/fraunhoferhhi/vvdec)** is integrated into FFmpeg as `libvvdec`. The accompanying mpv patch changes software decoder priority so that `libvvdec` is preferred over FFmpeg's native `vvc` decoder when no suitable hardware decoder is available. The native decoder remains available and can be forced with `--vd=vvc`.
+
+### Component Versions
+
+| Component | Version | Role |
+|---|---|---|
+| [mpv](https://github.com/mpv-player/mpv) | `v0.42.0-dev` (`bb4823e`) | Media player |
+| [FFmpeg](https://github.com/FFmpeg/FFmpeg/tree/release/9.0) | `n9.0.2` | Patched decoding and media framework |
+| [VVdeC](https://github.com/fraunhoferhhi/vvdec) | `3.4.0-dev` | H.266 / VVC software decoder |
+| [libplacebo](https://github.com/haasn/libplacebo) | `v7.387.0` | GPU rendering and video processing |
+| [libass](https://github.com/libass/libass) | `0.17.4` | Subtitle rendering |
+| NVIDIA nvJPEG2000 | `0.8+` API requirement | JPEG 2000 GPU decoder |
+
+FFmpeg library versions in this build: `libavcodec 63.1.102`, `libavformat 63.1.102`, `libavutil 61.1.102`, and `libswresample 7.1.102`.
 
 ---
 
 ## 📥 Download Prebuilt Release (Portable)
 
 Ready-to-use portable packages for Windows x64 are available in the **Releases** tab:
-* **[Download MPV-AC4-Windows-x64.zip](https://github.com/AdventurerRussia/mpv-ac4/releases/latest)**
+* **[Download MPV-AC4-nvJPEG2000-Windows-x64.zip](https://github.com/AdventurerRussia/mpv-ac4-nvJPEG2000-VVdeC/releases/latest)**
 
-### Folder Structure ([shinchiro](https://github.com/shinchiro/mpv-winbuild-cmake) / [rossy](https://github.com/rossy/mpv-install) standard):
+### Package Layout
+
 ```text
-MPV PLAYER AC-4/
-├── fonts/               # User fonts for OSD and subtitles
-├── installer/           # Windows file association scripts (rossy/mpv-install)
-│   ├── mpv-install.bat  # Register player in Windows and associate extensions (Right click -> Run as administrator)
-│   └── mpv-uninstall.bat# Unregister player and remove registry keys
-├── mpv/                 # Configuration directory:
-│   ├── fonts.conf       # Fontconfig configuration
-│   ├── input.conf       # Keybindings
-│   └── mpv.conf         # Video, audio, and GPU hardware acceleration options
+MPV-AC4-nvJPEG2000-Windows-x64/
+├── installer/           # Windows file-association scripts
+│   ├── mpv-install.bat
+│   └── mpv-uninstall.bat
+├── portable_config/     # mpv portable configuration directory
 ├── script-opts/         # Script configuration files
-├── scripts/             # Lua and JavaScript plugins
-├── mpv-document.ico     # File icon for associated media
-├── mpv-icon.ico         # Player executable icon
-├── mpv.com              # Console wrapper for log output
-└── mpv.exe              # Main GUI executable
+├── scripts/             # Lua and JavaScript scripts
+├── shaders/             # GPU shader files
+├── mpv.com              # Console wrapper
+├── mpv.exe              # Main player executable
+├── yt-dlp.exe           # YouTube and other site integration
+├── nvjpeg2k_0.dll       # NVIDIA nvJPEG2000 runtime
+├── libvvdec.dll         # Fraunhofer VVdeC runtime
+└── *.dll                # FFmpeg and other runtime dependencies
 ```
-> All 39 runtime dependency DLLs (FFmpeg, libplacebo, libass, etc.) are located directly next to `mpv.exe` and marked as hidden (`attrib +h`) to maintain a clean, uncluttered directory view matching shinchiro's release style.
 
----
-
-## 🎯 Supported Features
-
-| Format / Feature | Status | Details |
-|---|:---:|---|
-| **AC-4 Stereo (2.0)** | ✅ Verified | 48000 Hz, clean audio with perfect A/V sync (`believer.mp4`, `Lady Gaga Bloody Mary`) |
-| **AC-4 Multichannel (5.1)** | ✅ Verified | 6 channels, tested on real ATSC 3.0 broadcast captures (`KDAF.ts`) |
-| **JPEG 2000 GPU (nvJPEG2000)** | ✅ Verified | Optional GPU decoder (`jpeg2000_nvjpeg`, mpv `--vd=jpeg2000_nvjpeg`). The default JPEG 2000 decoder stays the software one. Supports grey, RGB/GBR, YUV 4:4:4, 4:2:2, 4:2:0 and 4:4:0, YUVA 4:4:4/4:2:2/4:2:0, and DCI XYZ 12-bit (`AV_PIX_FMT_XYZ12LE`) when the codestream profile is Digital Cinema. If the DLL, GPU, or this subset is missing, init returns `AVERROR_DECODER_NOT_FOUND` (so mpv can try the next decoder) or the frame is decoded with software `jpeg2000`. |
-| **H.266 / VVC (libvvdec)** | ✅ Verified | Software VVC decoder via [Fraunhofer VVdeC](https://github.com/fraunhoferhhi/vvdec) (`libvvdec`). Automatically selected over the FFmpeg native `vvc` decoder when GPU hardware decoding is unavailable. Benchmarked ~27% faster than the FFmpeg native decoder at 720p/60fps (1071 FPS vs 845 FPS). mpv codec priority: `libvvdec` > `vvc`. Use `--vd=vvc` to force the native decoder. |
-| **MP4 / MOV Containers** | ✅ Supported | Standard MP4/ISOBMFF containers containing AC-4 tracks |
-| **MPEG-TS Containers** | ✅ Supported | Digital television broadcast captures (ATSC 3.0, DVB-T2) |
-| **Multi-Language Audio Tracks** | ✅ Supported | Switching between presentations/substreams with `#` (`--aid=1`, `--aid=2`) |
-| **46034 Hz Rate (NTSC pull-down)** | ✅ Supported | Spec-compliant clock for 59.94 fps ATSC 3.0 broadcast video (`ratio 25025:24000`) |
-| **AC-4 Atmos (Part 2 / A-JOC)** | ❌ Not Supported | Dynamic 3D audio objects (stubbed in decoder with `AVERROR_PATCHWELCOME`). An open-source C implementation of AC-4 Atmos does not yet exist in FFmpeg (experimental research is ongoing in other languages, e.g., the Rust project [MacinDecode-Spatial-Player](https://github.com/SakuzyPeng/MacinDecode-Spatial-Player)). |
+The package includes **41 DLL files**, including the custom FFmpeg libraries, `libvvdec.dll`, `nvjpeg2k_0.dll`, libplacebo, libass and their runtime dependencies. The DLLs are stored alongside `mpv.exe` so the portable build can load its dependencies from the application directory.
 
 ---
 
