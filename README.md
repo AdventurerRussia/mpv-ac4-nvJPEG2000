@@ -101,7 +101,7 @@ MPV PLAYER AC-4/
 6. **`libavcodec/libvvdec.c`** (from `patches/ffmpeg-9.0.2-libvvdec.patch`):
    Integration of [Fraunhofer HHI VVdeC](https://github.com/fraunhoferhhi/vvdec) as a software H.266/VVC decoder (`libvvdec`). This is the official Fraunhofer patch (`v9-libvvdec.patch`) adapted for FFmpeg 9.0.2 — it registers `const FFCodec ff_libvvdec_decoder` in `allcodecs.c`, adds `--enable-libvvdec` to `configure`, and links via `pkg-config libvvdec`. Build VVdeC from source first (`-DBUILD_SHARED_LIBS=ON -DVVDEC_ENABLE_LINK_TIME_OPT=OFF`) and install to sysroot before running FFmpeg configure.
 
-   **mpv decoder priority patch** (`patches/mpv-libvvdec-priority.patch`): Modifies `common/codecs.c` to prefer `libvvdec` over the FFmpeg native `vvc` decoder when no hardware VVC decoder is available. When GPU hwdec does not support VVC (which is the case on virtually all current consumer GPUs), mpv will automatically select `libvvdec` as the first software fallback. The native `vvc` decoder remains available as a secondary fallback, or can be forced with `--vd=vvc`.
+   **mpv decoder priority patch** (`patches/mpv-0.42.0-libvvdec-priority.patch`): Modifies `common/codecs.c` to prefer `libvvdec` over the FFmpeg native `vvc` decoder when no hardware VVC decoder is available. When GPU hwdec does not support VVC (which is the case on virtually all current consumer GPUs), mpv will automatically select `libvvdec` as the first software fallback. The native `vvc` decoder remains available as a secondary fallback, or can be forced with `--vd=vvc`.
 
 ---
 
@@ -168,7 +168,7 @@ git clone --depth 1 https://github.com/mpv-player/mpv.git mpv
 cd mpv
 
 # Makes mpv prefer libvvdec over native vvc when no hwdec is available
-git apply ../patches/mpv-libvvdec-priority.patch
+git apply ../patches/mpv-0.42.0-libvvdec-priority.patch
 
 cd ..
 ```
