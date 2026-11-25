@@ -1,4 +1,4 @@
-# mpv AC-4 & nvJPEG2000 (Windows x64)
+# mpv AC-4 & nvJPEG2000 & VVdeC (Windows x64)
 
 [![Release](https://img.shields.io/github/v/release/AdventurerRussia/mpv-ac4?include_prereleases&color=blue&style=flat-square)](https://github.com/AdventurerRussia/mpv-ac4/releases/latest)
 [![mpv version](https://img.shields.io/badge/mpv-v0.42.0--dev%20(bb4823e)-orange?style=flat-square)](https://github.com/mpv-player/mpv)
