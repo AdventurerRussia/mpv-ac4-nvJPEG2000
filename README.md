@@ -1,4 +1,4 @@
-# mpv — AC-4, NVIDIA nvJPEG2000 & Fraunhofer VVdeC (Windows x64)
+# mpv — AC-4, NVIDIA nvJPEG2000 & VVdeC (Windows x64)
 
 [![Build](https://img.shields.io/badge/build-1.7.0-blue?style=flat-square)](https://github.com/AdventurerRussia/mpv-ac4-nvJPEG2000-VVdeC/releases)
 [![mpv](https://img.shields.io/badge/mpv-0.42.0--dev-orange?style=flat-square)](https://github.com/mpv-player/mpv)
