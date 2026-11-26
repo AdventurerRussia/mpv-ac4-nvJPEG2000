@@ -11,5 +11,6 @@
   `MPV-AC4-nvJPEG2000-Windows-x64/`
 - All player distribution files must be placed inside this `MPV-AC4-nvJPEG2000-Windows-x64/` folder.
 - The player distribution must be clean: strictly no user scripts (`.lua`), temporary files, or configuration files (`.conf`).
-- Placeholders for user storage MUST be included as empty directories: `portable_config/`, `scripts/`, `script-opts/`, `shaders/`.
+- Placeholders for user storage MUST be included as empty directories: `mpv/`, `scripts/`, `script-opts/`, `shaders/`.
+- The folder `portable_config/` MUST NOT be created or included; `mpv/` is used instead.
 - Temporary build or decoder directories like `DECODIR` must never be included.
