@@ -14,6 +14,7 @@
 - Placeholders for user storage MUST be included as empty directories: `fonts/`, `mpv/`, `scripts/`, `script-opts/`, `shaders/`.
 - Inside `mpv/`, empty placeholder files MUST be created: `fonts.conf`, `mpv.conf`, `input.conf`.
 - The folder `portable_config/` MUST NOT be created or included; `mpv/` is used instead.
+- `yt-dlp.exe` must always be checked and updated to the latest available upstream version (`yt-dlp -U`) before packaging.
 - Temporary build or decoder directories like `DECODIR` must never be included.
 
 ## Project Structure & Directory Layout
