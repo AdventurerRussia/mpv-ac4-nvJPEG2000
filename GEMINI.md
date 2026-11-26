@@ -23,7 +23,12 @@
 - `samples/` — Test media files:
   - `samples/jpeg2000/` — J2K/JP2 box test files (`sample_colr_*.jp2`, `sample_nlt*.jp2`, `seq_*.j2k`) and video streams (`test_*.mkv`).
   - `samples/ac4/` — Dolby AC-4 / Atmos audio streams and test videos (`.mp4`, `.ts`, `.wav`).
-- `agent/` — Automation scripts, build helpers, and packaging scripts (`make_release_zip.ps1`, `msys.ps1`, `package_portable.py`).
+- `agent/` — Automation scripts, developer tools, and packaging scripts:
+  - `agent/run_all_tests.ps1` — Runs and verifies the complete test suite across `tests/` (T01–T13) with automated compilation.
+  - `agent/fast_rebuild_nvjpeg.ps1` — Incremental rebuild of `nvjpeg2kdec.o` and `avcodec-63.dll` with instant deploy to player (~15s).
+  - `agent/test_samples_nvjpeg.ps1` — Automated batch verification of all media samples in `samples/jpeg2000/`.
+  - `agent/update_nvjpeg_patch.ps1` — Synchronizes `src/` and updates the standalone patch file.
+  - `agent/make_release_zip.ps1` — Builds clean release archive according to release rules (auto-updates `yt-dlp`).
 - `MPV PLAYER AC-4/` — Ready-to-run portable distribution of mpv with nvJPEG2000, AC-4, and VVdeC.
 - `mpv-ac4-repo/` — Local clone of the GitHub repository (`origin main`).
 - `patches/` — Standalone patch files for FFmpeg and mpv.
