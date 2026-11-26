@@ -4,6 +4,7 @@
 [![mpv](https://img.shields.io/badge/mpv-0.42.0--dev-orange?style=flat-square)](https://github.com/mpv-player/mpv)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-9.0.2-red?style=flat-square)](https://github.com/FFmpeg/FFmpeg/tree/release/9.0)
 [![VVdeC](https://img.shields.io/badge/VVdeC-3.4.0--dev-blue?style=flat-square)](https://github.com/fraunhoferhhi/vvdec)
+[![nvJPEG2000](https://img.shields.io/badge/nvJPEG2000-0.12.0-76B900?style=flat-square&logo=nvidia&logoColor=white)](https://developer.nvidia.com/nvjpeg2000)
 [![libplacebo](https://img.shields.io/badge/libplacebo-7.387.0-purple?style=flat-square)](https://github.com/haasn/libplacebo)
 [![libass](https://img.shields.io/badge/libass-0.17.4-teal?style=flat-square)](https://github.com/libass/libass)
 [![Dolby AC-4](https://img.shields.io/badge/audio-Dolby%20AC--4-success?style=flat-square)](https://www.etsi.org/deliver/etsi_ts/103100_103199/10319001/01.03.01_60/ts_10319001v010301p.pdf)
@@ -56,7 +57,7 @@ The optional `jpeg2000_nvjpeg` decoder uses NVIDIA's **nvJPEG2000** library and 
 | [VVdeC](https://github.com/fraunhoferhhi/vvdec) | `3.4.0-dev` | H.266 / VVC software decoder |
 | [libplacebo](https://github.com/haasn/libplacebo) | `v7.387.0` | GPU rendering and video processing |
 | [libass](https://github.com/libass/libass) | `0.17.4` | Subtitle rendering |
-| NVIDIA nvJPEG2000 | `0.8+` API requirement | JPEG 2000 GPU decoder |
+| [NVIDIA nvJPEG2000](https://developer.nvidia.com/nvjpeg2000) | `0.12.0` (`0.12.0.58`) | JPEG 2000 GPU decoder runtime (`nvjpeg2k_0.dll`) |
 
 FFmpeg library versions in this build: `libavcodec 63.1.102`, `libavformat 63.1.102`, `libavutil 61.1.102`, and `libswresample 7.1.102`.
 
