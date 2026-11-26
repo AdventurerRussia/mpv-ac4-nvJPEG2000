@@ -97,6 +97,11 @@ typedef struct NVJPEG2KContext {
     int                   has_unsupported_sig;
     AVCodecContext       *sw;
     int                   force_sw;
+
+    /* NVAPI DRS Power Management Mode state */
+    int                   nvapi_pstate_mode;    /* 0=Auto, 1=MaxPerf, -1=disabled */
+    int                   nvapi_applied;        /* 1 if we changed DRS setting */
+    uint32_t              nvapi_prev_mode;      /* previous DRS setting to restore */
 } NVJPEG2KContext;
 
 static int load_sym(AVCodecContext *avctx, HMODULE dll,
@@ -206,6 +211,345 @@ static HMODULE load_nvjpeg_dll(void)
             return self;
     }
     return NULL;
+}
+
+#define PSTATE_ID 0x1057EB71
+#define NVAPI_OK 0
+
+typedef void* (*NvAPI_QueryInterface_t)(uint32_t offset);
+typedef int (*NvAPI_Initialize_t)(void);
+typedef int (*NvAPI_DRS_CreateSession_t)(void **hSession);
+typedef int (*NvAPI_DRS_DestroySession_t)(void *hSession);
+typedef int (*NvAPI_DRS_LoadSettings_t)(void *hSession);
+typedef int (*NvAPI_DRS_SaveSettings_t)(void *hSession);
+typedef int (*NvAPI_DRS_FindProfileByName_t)(void *hSession, const wchar_t *profileName, void **hProfile);
+typedef int (*NvAPI_DRS_CreateProfile_t)(void *hSession, void *pProfile, void **hProfile);
+typedef int (*NvAPI_DRS_FindApplicationByName_t)(void *hSession, const wchar_t *appName, void **hProfile, void *pApp);
+typedef int (*NvAPI_DRS_CreateApplication_t)(void *hSession, void *hProfile, void *pApp);
+typedef int (*NvAPI_DRS_GetSetting_t)(void *hSession, void *hProfile, uint32_t settingId, void *pSetting);
+typedef int (*NvAPI_DRS_SetSetting_t)(void *hSession, void *hProfile, void *pSetting);
+
+#pragma pack(push, 8)
+typedef struct {
+    uint32_t valueLength;
+    uint8_t  valueData[4096];
+} NVDRS_BINARY_SETTING;
+
+typedef struct {
+    uint32_t version;
+    wchar_t  settingName[2048];
+    uint32_t settingId;
+    uint32_t settingType;
+    uint32_t settingLocation;
+    uint32_t isCurrentPredefined;
+    uint32_t isPredefinedValid;
+    union {
+        uint32_t             u32;
+        NVDRS_BINARY_SETTING bin;
+        wchar_t              wsz[2048];
+        float                f32;
+    } predefined;
+    union {
+        uint32_t             u32;
+        NVDRS_BINARY_SETTING bin;
+        wchar_t              wsz[2048];
+        float                f32;
+    } current;
+} NVDRS_SETTING;
+
+typedef struct {
+    uint32_t version;
+    wchar_t  profileName[2048];
+    uint32_t gpuSupport;
+    uint32_t isPredefined;
+    uint32_t numOfApps;
+    uint32_t numOfSettings;
+} NVDRS_PROFILE;
+
+typedef struct {
+    uint32_t version;
+    uint32_t isPredefined;
+    wchar_t  appName[2048];
+    wchar_t  userFriendlyName[2048];
+    wchar_t  launcher[2048];
+    wchar_t  fileInFolder[2048];
+    uint32_t flags;
+    wchar_t  commandLine[2048];
+} NVDRS_APPLICATION;
+#pragma pack(pop)
+
+/* Clean status prefixes for mpv OSD & terminal console */
+#define NVAPI_PREFIX_OK   "[OK] "
+#define NVAPI_PREFIX_WARN "[WARN] "
+#define NVAPI_PREFIX_ERR  "[ERR] "
+
+static void nvapi_apply_pstate(AVCodecContext *avctx, NVJPEG2KContext *ctx, int mode)
+{
+    HMODULE hNvApi;
+    NvAPI_QueryInterface_t NvAPI_QueryInterface;
+    NvAPI_Initialize_t NvAPI_Initialize;
+    NvAPI_DRS_CreateSession_t NvAPI_DRS_CreateSession;
+    NvAPI_DRS_DestroySession_t NvAPI_DRS_DestroySession;
+    NvAPI_DRS_LoadSettings_t NvAPI_DRS_LoadSettings;
+    NvAPI_DRS_SaveSettings_t NvAPI_DRS_SaveSettings;
+    NvAPI_DRS_FindProfileByName_t NvAPI_DRS_FindProfileByName;
+    NvAPI_DRS_CreateProfile_t NvAPI_DRS_CreateProfile;
+    NvAPI_DRS_FindApplicationByName_t NvAPI_DRS_FindApplicationByName;
+    NvAPI_DRS_CreateApplication_t NvAPI_DRS_CreateApplication;
+    NvAPI_DRS_GetSetting_t NvAPI_DRS_GetSetting;
+    NvAPI_DRS_SetSetting_t NvAPI_DRS_SetSetting;
+    void *hSession = NULL, *hProfile = NULL;
+    wchar_t exePath[MAX_PATH];
+    NVDRS_APPLICATION app;
+    NVDRS_SETTING setting;
+    int st;
+
+    if (mode < 0) {
+        av_log(avctx, AV_LOG_WARNING,
+               "nvjpeg2k: " NVAPI_PREFIX_WARN "NVIDIA Power Mode: Skipped (disabled via nvapi_pstate=-1)\n");
+        return;
+    }
+
+    hNvApi = LoadLibraryExW(L"nvapi64.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!hNvApi)
+        hNvApi = LoadLibraryA("nvapi64.dll");
+    if (!hNvApi) {
+        av_log(avctx, AV_LOG_WARNING,
+               "nvjpeg2k: " NVAPI_PREFIX_WARN "NVIDIA Power Mode: Unavailable (nvapi64.dll not found)\n");
+        return;
+    }
+
+    NvAPI_QueryInterface = (NvAPI_QueryInterface_t)GetProcAddress(hNvApi, "nvapi_QueryInterface");
+    if (!NvAPI_QueryInterface) {
+        av_log(avctx, AV_LOG_WARNING,
+               "nvjpeg2k: " NVAPI_PREFIX_ERR "NVIDIA Power Mode: Failed (nvapi_QueryInterface missing)\n");
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    NvAPI_Initialize = (NvAPI_Initialize_t)NvAPI_QueryInterface(0x0150E828);
+    NvAPI_DRS_CreateSession = (NvAPI_DRS_CreateSession_t)NvAPI_QueryInterface(0x0694D52E);
+    NvAPI_DRS_DestroySession = (NvAPI_DRS_DestroySession_t)NvAPI_QueryInterface(0xDAD9CFF8);
+    NvAPI_DRS_LoadSettings = (NvAPI_DRS_LoadSettings_t)NvAPI_QueryInterface(0x375DBD6B);
+    NvAPI_DRS_SaveSettings = (NvAPI_DRS_SaveSettings_t)NvAPI_QueryInterface(0xFCBC7E14);
+    NvAPI_DRS_FindProfileByName = (NvAPI_DRS_FindProfileByName_t)NvAPI_QueryInterface(0x7E4A9A0B);
+    NvAPI_DRS_CreateProfile = (NvAPI_DRS_CreateProfile_t)NvAPI_QueryInterface(0xCC176068);
+    NvAPI_DRS_FindApplicationByName = (NvAPI_DRS_FindApplicationByName_t)NvAPI_QueryInterface(0xEEE566B2);
+    NvAPI_DRS_CreateApplication = (NvAPI_DRS_CreateApplication_t)NvAPI_QueryInterface(0x4347A9DE);
+    NvAPI_DRS_GetSetting = (NvAPI_DRS_GetSetting_t)NvAPI_QueryInterface(0x73BF8338);
+    NvAPI_DRS_SetSetting = (NvAPI_DRS_SetSetting_t)NvAPI_QueryInterface(0x577DD202);
+
+    if (!NvAPI_Initialize || !NvAPI_DRS_CreateSession || !NvAPI_DRS_DestroySession ||
+        !NvAPI_DRS_LoadSettings || !NvAPI_DRS_SaveSettings || !NvAPI_DRS_GetSetting || !NvAPI_DRS_SetSetting) {
+        av_log(avctx, AV_LOG_WARNING,
+               "nvjpeg2k: " NVAPI_PREFIX_ERR "NVIDIA Power Mode: Failed (DRS entry points unresolved)\n");
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    st = NvAPI_Initialize();
+    if (st != NVAPI_OK) {
+        av_log(avctx, AV_LOG_WARNING,
+               "nvjpeg2k: " NVAPI_PREFIX_ERR "NVIDIA Power Mode: Failed (NvAPI_Initialize=%d)\n", st);
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    st = NvAPI_DRS_CreateSession(&hSession);
+    if (st != NVAPI_OK) {
+        av_log(avctx, AV_LOG_WARNING,
+               "nvjpeg2k: " NVAPI_PREFIX_ERR "NVIDIA Power Mode: Failed (CreateSession=%d)\n", st);
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    st = NvAPI_DRS_LoadSettings(hSession);
+    if (st != NVAPI_OK) {
+        av_log(avctx, AV_LOG_WARNING,
+               "nvjpeg2k: " NVAPI_PREFIX_ERR "NVIDIA Power Mode: Failed (LoadSettings=%d)\n", st);
+        NvAPI_DRS_DestroySession(hSession);
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    if (!GetModuleFileNameW(NULL, exePath, MAX_PATH)) {
+        av_log(avctx, AV_LOG_WARNING,
+               "nvjpeg2k: " NVAPI_PREFIX_ERR "NVIDIA Power Mode: Failed (GetModuleFileName failed)\n");
+        NvAPI_DRS_DestroySession(hSession);
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    for (int i = 0; exePath[i]; i++) {
+        if (exePath[i] == L'\\') exePath[i] = L'/';
+        exePath[i] = towlower(exePath[i]);
+    }
+
+    memset(&app, 0, sizeof(app));
+    app.version = sizeof(app) | (4 << 16);
+    if (NvAPI_DRS_FindApplicationByName)
+        st = NvAPI_DRS_FindApplicationByName(hSession, exePath, &hProfile, &app);
+    else
+        st = -1;
+
+    if (st != NVAPI_OK) {
+        if (NvAPI_DRS_FindProfileByName)
+            st = NvAPI_DRS_FindProfileByName(hSession, exePath, &hProfile);
+        if (st != NVAPI_OK && NvAPI_DRS_CreateProfile) {
+            NVDRS_PROFILE prof;
+            memset(&prof, 0, sizeof(prof));
+            prof.version = sizeof(prof) | (1 << 16);
+            wcsncpy(prof.profileName, exePath, 2047);
+            prof.gpuSupport = 0x7;
+            st = NvAPI_DRS_CreateProfile(hSession, &prof, &hProfile);
+        }
+        if (st == NVAPI_OK && hProfile && NvAPI_DRS_CreateApplication) {
+            NVDRS_APPLICATION newApp;
+            memset(&newApp, 0, sizeof(newApp));
+            newApp.version = sizeof(newApp) | (4 << 16);
+            wcsncpy(newApp.appName, exePath, 2047);
+            wcsncpy(newApp.userFriendlyName, exePath, 2047);
+            NvAPI_DRS_CreateApplication(hSession, hProfile, &newApp);
+        }
+    }
+
+    if (!hProfile) {
+        av_log(avctx, AV_LOG_WARNING,
+               "nvjpeg2k: " NVAPI_PREFIX_WARN "NVIDIA Power Mode: Could not locate/create app profile\n");
+        NvAPI_DRS_DestroySession(hSession);
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    memset(&setting, 0, sizeof(setting));
+    setting.version = sizeof(setting) | (1 << 16);
+    st = NvAPI_DRS_GetSetting(hSession, hProfile, PSTATE_ID, &setting);
+    if (st == NVAPI_OK) {
+        ctx->nvapi_prev_mode = setting.current.u32;
+    } else {
+        ctx->nvapi_prev_mode = 0; /* Default Adaptive */
+    }
+
+    if (ctx->nvapi_prev_mode != (uint32_t)mode) {
+        memset(&setting, 0, sizeof(setting));
+        setting.version = sizeof(setting) | (1 << 16);
+        setting.settingId = PSTATE_ID;
+        setting.current.u32 = (uint32_t)mode;
+        st = NvAPI_DRS_SetSetting(hSession, hProfile, &setting);
+        if (st != NVAPI_OK) {
+            av_log(avctx, AV_LOG_WARNING,
+                   "nvjpeg2k: " NVAPI_PREFIX_ERR "NVIDIA Power Mode: Failed (SetSetting=%d)\n", st);
+        } else {
+            st = NvAPI_DRS_SaveSettings(hSession);
+            if (st != NVAPI_OK) {
+                av_log(avctx, AV_LOG_WARNING,
+                       "nvjpeg2k: " NVAPI_PREFIX_ERR "NVIDIA Power Mode: Failed (SaveSettings=%d)\n", st);
+            } else {
+                ctx->nvapi_applied = 1;
+                av_log(avctx, AV_LOG_WARNING,
+                       "nvjpeg2k: " NVAPI_PREFIX_OK "NVIDIA Power Mode: Prefer Maximum Performance enabled (Mode %d, prev: %u)\n",
+                       mode, (unsigned)ctx->nvapi_prev_mode);
+            }
+        }
+    } else {
+        av_log(avctx, AV_LOG_WARNING,
+               "nvjpeg2k: " NVAPI_PREFIX_OK "NVIDIA Power Mode: Prefer Maximum Performance already active (Mode %d)\n",
+               mode);
+    }
+
+    NvAPI_DRS_DestroySession(hSession);
+    FreeLibrary(hNvApi);
+}
+
+static void nvapi_restore_pstate(AVCodecContext *avctx, NVJPEG2KContext *ctx)
+{
+    HMODULE hNvApi;
+    NvAPI_QueryInterface_t NvAPI_QueryInterface;
+    NvAPI_Initialize_t NvAPI_Initialize;
+    NvAPI_DRS_CreateSession_t NvAPI_DRS_CreateSession;
+    NvAPI_DRS_DestroySession_t NvAPI_DRS_DestroySession;
+    NvAPI_DRS_LoadSettings_t NvAPI_DRS_LoadSettings;
+    NvAPI_DRS_SaveSettings_t NvAPI_DRS_SaveSettings;
+    NvAPI_DRS_FindApplicationByName_t NvAPI_DRS_FindApplicationByName;
+    NvAPI_DRS_FindProfileByName_t NvAPI_DRS_FindProfileByName;
+    NvAPI_DRS_SetSetting_t NvAPI_DRS_SetSetting;
+    void *hSession = NULL, *hProfile = NULL;
+    wchar_t exePath[MAX_PATH];
+    NVDRS_APPLICATION app;
+    NVDRS_SETTING setting;
+    int st;
+
+    if (!ctx->nvapi_applied)
+        return;
+
+    hNvApi = LoadLibraryExW(L"nvapi64.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!hNvApi)
+        hNvApi = LoadLibraryA("nvapi64.dll");
+    if (!hNvApi)
+        return;
+
+    NvAPI_QueryInterface = (NvAPI_QueryInterface_t)GetProcAddress(hNvApi, "nvapi_QueryInterface");
+    if (!NvAPI_QueryInterface) {
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    NvAPI_Initialize = (NvAPI_Initialize_t)NvAPI_QueryInterface(0x0150E828);
+    NvAPI_DRS_CreateSession = (NvAPI_DRS_CreateSession_t)NvAPI_QueryInterface(0x0694D52E);
+    NvAPI_DRS_DestroySession = (NvAPI_DRS_DestroySession_t)NvAPI_QueryInterface(0xDAD9CFF8);
+    NvAPI_DRS_LoadSettings = (NvAPI_DRS_LoadSettings_t)NvAPI_QueryInterface(0x375DBD6B);
+    NvAPI_DRS_SaveSettings = (NvAPI_DRS_SaveSettings_t)NvAPI_QueryInterface(0xFCBC7E14);
+    NvAPI_DRS_FindApplicationByName = (NvAPI_DRS_FindApplicationByName_t)NvAPI_QueryInterface(0xEEE566B2);
+    NvAPI_DRS_FindProfileByName = (NvAPI_DRS_FindProfileByName_t)NvAPI_QueryInterface(0x7E4A9A0B);
+    NvAPI_DRS_SetSetting = (NvAPI_DRS_SetSetting_t)NvAPI_QueryInterface(0x577DD202);
+
+    if (!NvAPI_Initialize || !NvAPI_DRS_CreateSession || !NvAPI_DRS_DestroySession ||
+        !NvAPI_DRS_LoadSettings || !NvAPI_DRS_SaveSettings || !NvAPI_DRS_SetSetting) {
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    if (NvAPI_Initialize() != NVAPI_OK || NvAPI_DRS_CreateSession(&hSession) != NVAPI_OK) {
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    if (NvAPI_DRS_LoadSettings(hSession) != NVAPI_OK) {
+        NvAPI_DRS_DestroySession(hSession);
+        FreeLibrary(hNvApi);
+        return;
+    }
+
+    if (GetModuleFileNameW(NULL, exePath, MAX_PATH)) {
+        for (int i = 0; exePath[i]; i++) {
+            if (exePath[i] == L'\\') exePath[i] = L'/';
+            exePath[i] = towlower(exePath[i]);
+        }
+        memset(&app, 0, sizeof(app));
+        app.version = sizeof(app) | (4 << 16);
+        if (NvAPI_DRS_FindApplicationByName)
+            st = NvAPI_DRS_FindApplicationByName(hSession, exePath, &hProfile, &app);
+        else
+            st = -1;
+        if (st != NVAPI_OK && NvAPI_DRS_FindProfileByName)
+            st = NvAPI_DRS_FindProfileByName(hSession, exePath, &hProfile);
+
+        if (st == NVAPI_OK && hProfile) {
+            memset(&setting, 0, sizeof(setting));
+            setting.version = sizeof(setting) | (1 << 16);
+            setting.settingId = PSTATE_ID;
+            setting.current.u32 = ctx->nvapi_prev_mode;
+            NvAPI_DRS_SetSetting(hSession, hProfile, &setting);
+            NvAPI_DRS_SaveSettings(hSession);
+            av_log(avctx, AV_LOG_WARNING,
+                   "nvjpeg2k: " NVAPI_PREFIX_OK "NVIDIA Power Mode: Restored default power mode (%u)\n",
+                   (unsigned)ctx->nvapi_prev_mode);
+        }
+    }
+
+    ctx->nvapi_applied = 0;
+    NvAPI_DRS_DestroySession(hSession);
+    FreeLibrary(hNvApi);
 }
 
 static void free_device_mem(NVJPEG2KContext *ctx)
@@ -1068,6 +1412,9 @@ static av_cold int nvjpeg2k_decode_init(AVCodecContext *avctx)
     av_log(avctx, AV_LOG_INFO,
            "nvjpeg2k: GPU JPEG 2000 decoder ready (nvJPEG2000 %d.%d.%d, CUDA device %d)\n",
            major, minor, patch, ctx->gpu_device);
+
+    /* Elevate GPU Power Management Mode via NVAPI DRS */
+    nvapi_apply_pstate(avctx, ctx, ctx->nvapi_pstate_mode);
     return 0;
 }
 
@@ -1400,6 +1747,10 @@ static av_cold int nvjpeg2k_decode_close(AVCodecContext *avctx)
         FreeLibrary(ctx->nvjpeg2k_dll);
         ctx->nvjpeg2k_dll = NULL;
     }
+
+    /* Restore GPU Power Management Mode via NVAPI DRS if modified */
+    nvapi_restore_pstate(avctx, ctx);
+
     return 0;
 }
 
@@ -1408,6 +1759,7 @@ static av_cold int nvjpeg2k_decode_close(AVCodecContext *avctx)
 typedef struct NVJPEG2KContext {
     AVClass *av_class;
     int      gpu_device;
+    int      nvapi_pstate_mode;
 } NVJPEG2KContext;
 
 static av_cold int nvjpeg2k_decode_init(AVCodecContext *avctx)
@@ -1445,6 +1797,8 @@ static void nvjpeg2k_decode_flush(AVCodecContext *avctx)
 static const AVOption options[] = {
     { "gpu", "NVIDIA GPU index", OFFSET(gpu_device), AV_OPT_TYPE_INT,
       { .i64 = 0 }, 0, 15, FLAGS },
+    { "nvapi_pstate", "NVAPI power management mode (0=Adaptive, 1=MaxPerf, -1=Disabled)",
+      OFFSET(nvapi_pstate_mode), AV_OPT_TYPE_INT, { .i64 = 1 }, -1, 5, FLAGS },
     { NULL },
 };
 

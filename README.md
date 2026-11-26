@@ -1,6 +1,6 @@
 # mpv — AC-4, NVIDIA nvJPEG2000 & VVdeC (Windows x64)
 
-[![Build](https://img.shields.io/badge/build-1.7.0-blue?style=flat-square)](https://github.com/AdventurerRussia/mpv-ac4-nvJPEG2000-VVdeC/releases)
+[![Build](https://img.shields.io/badge/build-1.8.0-blue?style=flat-square)](https://github.com/AdventurerRussia/mpv-ac4-nvJPEG2000-VVdeC/releases)
 [![mpv](https://img.shields.io/badge/mpv-0.42.0--dev-orange?style=flat-square)](https://github.com/mpv-player/mpv)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-9.0.2-red?style=flat-square)](https://github.com/FFmpeg/FFmpeg/tree/release/9.0)
 [![VVdeC](https://img.shields.io/badge/VVdeC-3.4.0--dev-blue?style=flat-square)](https://github.com/fraunhoferhhi/vvdec)
