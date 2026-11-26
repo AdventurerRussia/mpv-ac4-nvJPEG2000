@@ -15,3 +15,9 @@
 - Inside `mpv/`, empty placeholder files MUST be created: `fonts.conf`, `mpv.conf`, `input.conf`.
 - The folder `portable_config/` MUST NOT be created or included; `mpv/` is used instead.
 - Temporary build or decoder directories like `DECODIR` must never be included.
+
+## Project Structure & Test Suite Directory
+- Unit tests, mock suites, and decoder audit tests are located in: `tests/`
+  (e.g., `tests/test_t01_comprehensive.c`, `tests/test_t02_jp2box.c`, `tests/test_t08_pitch_dtoh.c`, `tests/test_t13_pitch.c`).
+- Scripts for build and release automation are located in: `agent/`.
+- Ready portable player distribution is located in: `MPV PLAYER AC-4/`.
